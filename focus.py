@@ -28,8 +28,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
-USER = CONFIG.get("user_name", "Пользователь")          # how the user is labelled in the chat and in prompts
-STYLE = CONFIG.get("chat_style", "По-русски, на «ты», коротко.")
+# interface language: strings in the code are English, translations live in locales/<lang>.json
+LANG = CONFIG.get("ui_lang", "en")
+LANG_NAME = {"en": "English", "ru": "Russian"}.get(LANG, "English")
+_LOCALE = ROOT / "locales" / f"{LANG}.json"
+_TR = json.loads(_LOCALE.read_text(encoding="utf-8")) if LANG != "en" and _LOCALE.exists() else {}
+
+
+def tr(text: str, *args) -> str:
+    s = _TR.get(text, text)
+    return s.format(*args) if args else s
+
+
+USER = CONFIG.get("user_name", tr("User"))          # how the user is labelled in the chat and in prompts
+STYLE = CONFIG.get("chat_style", "In English, casual, brief.")
 SALARY_PROFILE = CONFIG.get("salary_profile", "")     # who is job hunting: experience, languages, city — used for salary estimates
 LOG = ROOT / "focus.log"
 
@@ -109,24 +121,20 @@ def screen() -> tuple[int, int]:
 
 
 # ---------------------------------------------------------------- Claude
-PROMPT = """Ты — Claude. Ты работаешь привратником в FocusLock на компьютере пользователя ({user}): он сам попросил, \
-чтобы его «замораживали» на учёбу, потому что постоянно откладывает. Сейчас идёт сессия «{title}», \
-осталось {left} мин. из {total}. Попыток переключиться на другое окно: {escapes}.
-
-Правила, которые выбрал сам {user}: отпускать раньше или откладывать — только по причине.
-- «Не хочу», «надоело», «потом» — не причина. Мягко и с юмором поддержи, предложи дотерпеть или \
-сделать хотя бы маленький кусок, но не отпускай.
-- Реальная причина (плохо себя чувствует, кто-то пришёл, звонок, срочное дело, еда на плите) — отпусти \
-(unlock) или дай паузу (snooze), если дело короткое. Здоровье и безопасность — отпускай всегда, без допроса.
-- Идёт матч в игре или нужно что-то быстро доделать — snooze до 30 минут, потом сессия продолжится.
-- Говорит, что всё уже сделал, — поверь, если звучит конкретно, и отпусти. Похвали.
-- Если причина не названа, спроси её. Не читай нотаций. {style}
-
-Переписка в этой сессии:
-{history}
-
-Ответь СТРОГО одним JSON-объектом:
-{{"reply": "твой ответ", "action": "none" | "unlock" | "snooze", "minutes": число для snooze или 0}}"""
+PROMPT = ("You are Claude. You work as the gatekeeper in FocusLock on the user's computer ({user}): they "
+          "asked to be \"frozen\" into studying themselves, because they keep putting it off. The current "
+          "session is \"{title}\", {left} min left out of {total}. Attempts to switch to another window: "
+          "{escapes}.\n\nRules that {user} chose: leaving early or postponing only for a reason.\n- \"I don't "
+          "want to\", \"I'm bored\", \"later\" are not reasons. Be supportive, gently and with humour; suggest "
+          "holding on or doing at least a small piece, but don't let them go.\n- A real reason (feeling "
+          "unwell, someone arrived, a call, something urgent, food on the stove): release (unlock) or give a "
+          "pause (snooze) if it's a short thing. Health and safety: always release, no questioning.\n- A game "
+          "match is running or something needs to be finished quickly: snooze up to 30 minutes, then the "
+          "session continues.\n- They say they've already done everything: believe it if it sounds specific, "
+          "and release. Praise them.\n- If no reason is given, ask for it. No lecturing. "
+          "{style}\n\nConversation in this session:\n{history}\n\nAnswer STRICTLY with a single JSON "
+          "object:\n{{\"reply\": \"your answer\", \"action\": \"none\" | \"unlock\" | \"snooze\", \"minutes\": number for "
+          "snooze or 0}}")
 
 
 def ask_claude(title: str, left: int, total: int, escapes: int, history: list[tuple[str, str]]) -> dict:
@@ -190,24 +198,24 @@ def apply_kind(job: dict) -> tuple[str, str]:
             m = re.search(r"-(\d{6,})/?(?:\?|$)", url)
             h = _get(f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{m.group(1)}" if m else url)
             if "apply-link-offsite" in h or "offsite-apply" in h:
-                return "ext", "↗ LinkedIn отправит на сайт компании (регистрация)"
+                return "ext", tr("↗ LinkedIn will redirect to the company site (sign-up)")
             if "apply-link-onsite" in h:
-                return "easy", "⚡ Solicitud sencilla — прямо в LinkedIn"
+                return "easy", tr("⚡ Solicitud sencilla — right in LinkedIn")
         elif src == "jobtoday":
             h = _get(url)
             d = json.loads(re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', h, re.S).group(1))
             j = d["props"]["pageProps"].get("job") or {}
             if j.get("isExternalJob"):
-                return "ext", "↗ партнёрский сайт (Job Today перекинет)"
+                return "ext", tr("↗ partner site (Job Today will redirect)")
             if j.get("easyApply") is not None:
-                return "easy", "⚡ отклик прямо в Job Today"
+                return "easy", tr("⚡ apply right in Job Today")
         elif src == "telegram":
-            return "easy", "✉ контакт для отклика — в посте"
+            return "easy", tr("✉ contact for applying is in the post")
         elif src == "habr":
-            return "easy", "⚡ отклик на Хабр Карьере (нужен вход)"
+            return "easy", tr("⚡ apply on Habr Career (login required)")
     except Exception as e:
         log(f"apply_kind {job.get('company')}: {e}")
-    return "?", "· не понял, куда ведёт отклик"
+    return "?", tr("· couldn't tell where applying leads")
 
 
 def classify_jobs(jobs: list[dict]) -> None:
@@ -224,18 +232,15 @@ def classify_jobs(jobs: list[dict]) -> None:
 
 
 SALARY_CACHE = ROOT / "salary_cache.json"
-SALARY_PROMPT = """Помоги пользователю ({user}) заполнить поле «желаемая зарплата» в откликах. О нём: {profile}
-
-Для каждой вакансии оцени реалистичную желаемую зарплату: брутто за год в евро, с учётом страны/рынка \
-работодателя (испанская компания — испанский рынок; удалёнка из другой страны — её рынок для найма из Испании; \
-вакансия в рублях — пересчитай и скажи об этом), уровня роли и его опыта. Если зарплата указана в вакансии — \
-опирайся на неё. Число — то, что разумно вписать в форму: не занижай, но и не так, чтобы отсеяли.
-
-Вакансии:
-{jobs}
-
-Ответь СТРОГО JSON-массивом в том же порядке, без пояснений:
-[{{"id": "...", "ask": 24000, "range": "22–26k", "market": "Испания", "note": "до 8 слов, по-русски"}}]"""
+SALARY_PROMPT = ("Help the user ({user}) fill in the \"desired salary\" field in applications. About them: "
+                 "{profile}\n\nFor each job, estimate a realistic desired salary: gross per year in euros, "
+                 "taking into account the employer's country/market (Spanish company: Spanish market; remote "
+                 "from another country: that market's rates for hiring from Spain; job in rubles: convert "
+                 "and say so), the role level and their experience. If the salary is stated in the job ad, "
+                 "rely on it. The number is what is reasonable to put in the form: don't lowball, but not so "
+                 "high that it gets filtered out.\n\nJobs:\n{jobs}\n\nAnswer STRICTLY with a JSON array in the "
+                 "same order, no explanations:\n[{{\"id\": \"...\", \"ask\": 24000, \"range\": \"22–26k\", \"market\": "
+                 "\"Spain\", \"note\": \"up to 8 words, in {lang}\"}}]")
 
 
 def salary_estimates(jobs: list[dict]) -> dict:
@@ -246,13 +251,11 @@ def salary_estimates(jobs: list[dict]) -> dict:
         cache = {}
     missing = [j for j in jobs if j["id"] not in cache]
     if missing:
-        text = "\n\n".join(f"id: {j['id']}\n{j['title']} — {j['company']} ({j.get('location') or '?'}, "
-                           f"источник {j.get('source')})\nЗарплата в вакансии: {j.get('salary') or 'не указана'}\n"
-                           f"{(j.get('description') or '')[:1200]}" for j in missing)
+        text = "\n\n".join(f"id: {j['id']}\n{j['title']} — {j['company']} ({j.get('location') or '?'}, source {j.get('source')})\nSalary in the job ad: {j.get('salary') or 'not specified'}\n{(j.get('description') or '')[:1200]}" for j in missing)
         exe = Path.home() / ".local" / "bin" / "claude.exe"
         r = subprocess.run([str(exe) if exe.exists() else "claude", "-p", "--output-format", "json", "--tools", "",
                             "--strict-mcp-config", "--no-session-persistence"],
-                           input=SALARY_PROMPT.format(user=USER, profile=SALARY_PROFILE or "не указано", jobs=text), capture_output=True, text=True, encoding="utf-8",
+                           input=SALARY_PROMPT.format(user=USER, profile=SALARY_PROFILE or "not specified", jobs=text, lang=LANG_NAME), capture_output=True, text=True, encoding="utf-8",
                            timeout=300, cwd=str(ROOT), creationflags=0x08000000)
         out = json.loads(r.stdout)
         if out.get("is_error"):
@@ -271,7 +274,7 @@ def fmt_salary(e: dict) -> str:
     except Exception:
         ask = str(e.get("ask", "?"))
     extra = ", ".join(x for x in (e.get("market"), e.get("range")) if x)
-    return f"💶 {ask} € брутто/год" + (f" ({extra})" if extra else "") + (f" — {e['note']}" if e.get("note") else "")
+    return tr("💶 {0} € gross/year", ask) + (f" ({extra})" if extra else "") + (f" — {e['note']}" if e.get("note") else "")
 
 
 def mark_applied(job_id: str) -> None:
@@ -342,9 +345,9 @@ class Session:
         self.W, self.H, self.cw = W, H, cw
         self._build()
         self.open_study()
-        self.say("Claude", f"Через {int(self.grace_until - time.time())} с начинаем «{self.title}» на {self.total} мин. "
-                           f"Сохрани игру, налей чай. Нужно больше времени — ползунок «Отложить начало» "
-                           f"(один раз, до старта). Выйти раньше — напиши сюда причину.")
+        self.say("Claude", tr("Starting «{1}» for {2} min in {0} s. Save your game, make some tea. Need more "
+                              "time? Use the «Delay start» slider (once, before the start). To leave early, "
+                              "write the reason here.", int(self.grace_until - time.time()), self.title, self.total))
         self.tick()
 
     def _build(self):
@@ -371,15 +374,15 @@ class Session:
         # "Delay start": once, only before the session starts, no reason needed
         self.delay_row = tk.Frame(self.root, bg=BG)
         self.delay_row.pack(fill="x", padx=14, pady=(0, 14), before=self.chat)
-        tk.Label(self.delay_row, text="Отложить начало, мин:", bg=BG, fg=DIM, font=("Segoe UI", 10)).pack(side="left")
+        tk.Label(self.delay_row, text=tr("Delay start, min:"), bg=BG, fg=DIM, font=("Segoe UI", 10)).pack(side="left")
         self.delay_scale = tk.Scale(self.delay_row, from_=10, to=60, resolution=10, orient="horizontal",
                                     bg=BG, fg=FG, troughcolor="#26263a", highlightthickness=0, length=150)
         self.delay_scale.pack(side="left", padx=6)
-        tk.Button(self.delay_row, text="Отложить", command=self.delay_start, bg="#26263a", fg=FG,
+        tk.Button(self.delay_row, text=tr("Delay"), command=self.delay_start, bg="#26263a", fg=FG,
                   relief="flat", font=("Segoe UI", 10)).pack(side="left")
         if self.jobs:
             self._build_jobs()
-        self.close_btn = tk.Button(self.root, text="Закрыть", command=self.root.destroy, bg="#26263a", fg=FG,
+        self.close_btn = tk.Button(self.root, text=tr("Close"), command=self.root.destroy, bg="#26263a", fg=FG,
                                    relief="flat", font=f)
 
     def _build_jobs(self):
@@ -397,7 +400,7 @@ class Session:
             lbl.pack(fill="x", padx=6, pady=(4, 0))
             tk.Label(row, text=j.get("_how", ""), bg="#1f1f29", font=small, anchor="w",
                      fg={"easy": "#4fd18b", "ext": "#ff9a6b"}.get(j.get("_kind"), DIM)).pack(fill="x", padx=6)
-            j["_sal"] = tk.Label(row, text="💶 считаю зарплату…", bg="#1f1f29", fg=DIM, font=small, anchor="w",
+            j["_sal"] = tk.Label(row, text=tr("💶 estimating salary…"), bg="#1f1f29", fg=DIM, font=small, anchor="w",
                                  wraplength=self.cw - 40, justify="left")
             j["_sal"].pack(fill="x", padx=6)
             j["_sal"].bind("<Button-1>", lambda e, j=j: self.copy_salary(j))
@@ -405,9 +408,9 @@ class Session:
             btns.pack(fill="x", padx=6, pady=(2, 4))
             mk = lambda text, cmd: tk.Button(btns, text=text, command=cmd, bg="#26263a", fg=FG, relief="flat",
                                              font=small).pack(side="left", padx=(0, 6))
-            mk("📋 Письмо", lambda j=j: self.copy_letter(j))
+            mk(tr("📋 Letter"), lambda j=j: self.copy_letter(j))
             mk("📁 PDF", lambda j=j: self.open_dir(j))
-            mk("✓ Отправил", lambda j=j, lbl=lbl, row=row: self.applied(j, lbl, row))
+            mk(tr("✓ Sent"), lambda j=j, lbl=lbl, row=row: self.applied(j, lbl, row))
         threading.Thread(target=self._load_salaries, daemon=True).start()
 
     def _load_salaries(self):
@@ -423,14 +426,15 @@ class Session:
             e = est.get(j["id"])
             j["_ask"] = e.get("ask") if e else None
             if j["_sal"].winfo_exists():
-                j["_sal"].config(text=fmt_salary(e) + "  (клик — скопировать)" if e else "💶 оценить не вышло",
+                j["_sal"].config(text=fmt_salary(e) + tr("  (click to copy)") if e else tr("💶 couldn't "
+                                                                                            "estimate"),
                                  fg="#f5c66b" if e else DIM, cursor="hand2" if e else "")
 
     def copy_salary(self, j: dict):
         if j.get("_ask"):
             self.root.clipboard_clear()
             self.root.clipboard_append(str(j["_ask"]))
-            self.say("sys", f"Скопировал {j['_ask']} для {j['company']}.")
+            self.say("sys", tr("Copied {0} for {1}.", j['_ask'], j['company']))
 
     def _build_profile(self, parent, small):
         """"🪪 Profile" button: expands fields from profile.json; clicking a field copies its value."""
@@ -444,17 +448,17 @@ class Session:
             lbl = tk.Label(panel, text=f"{k}: {v}", bg="#1f1f29", fg=FG, font=small, anchor="w", cursor="hand2",
                            wraplength=self.cw - 40, justify="left")
             lbl.pack(fill="x", padx=6, pady=1)
-            lbl.bind("<Button-1>", lambda e, k=k, v=v: self._copy(v, f"{k} скопировано."))
+            lbl.bind("<Button-1>", lambda e, k=k, v=v: self._copy(v, tr("{0} copied.", k)))
 
         def toggle():
             if panel.winfo_ismapped():
                 panel.pack_forget()
-                btn.config(text="🪪 Анкета ▸")
+                btn.config(text=tr("🪪 Profile ▸"))
             else:
                 panel.pack(fill="x", pady=(0, 6), after=btn)
-                btn.config(text="🪪 Анкета ▾ (клик по полю — копировать)")
+                btn.config(text=tr("🪪 Profile ▾ (click a field to copy)"))
 
-        btn = tk.Button(parent, text="🪪 Анкета ▸", command=toggle, bg="#26263a", fg=FG, relief="flat", font=small,
+        btn = tk.Button(parent, text=tr("🪪 Profile ▸"), command=toggle, bg="#26263a", fg=FG, relief="flat", font=small,
                         anchor="w")
         btn.pack(fill="x", pady=(0, 4))
 
@@ -467,11 +471,11 @@ class Session:
         try:
             text = (Path(j["app_dir"]) / "carta.txt").read_text(encoding="utf-8")
         except Exception:
-            self.say("sys", "Письма для этой вакансии не нашлось.")
+            self.say("sys", tr("No letter found for this job."))
             return
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
-        self.say("sys", f"Письмо для {j['company']} скопировано — вставляй Ctrl+V.")
+        self.say("sys", tr("Letter for {0} copied — paste it with Ctrl+V.", j['company']))
 
     def open_dir(self, j: dict):
         if j.get("app_dir") and Path(j["app_dir"]).exists():
@@ -483,7 +487,7 @@ class Session:
         try:
             mark_applied(j["id"])
         except Exception as e:
-            self.say("sys", f"Не смог отметить: {e}")
+            self.say("sys", tr("Couldn't mark it: {0}", e))
             return
         j["_sent"] = True
         self.sent += 1
@@ -491,12 +495,12 @@ class Session:
         for w in row.winfo_children():
             if isinstance(w, tk.Frame):
                 w.destroy()
-        log(f"{self.slot}: отправлен отклик {j['company']} — {j['title']}")
+        log(tr("{0}: application sent {1} — {2}", self.slot, j['company'], j['title']))
         if self.sent == len(self.jobs):
-            self.finish(f"все {self.sent} откликов отправлены через {self.elapsed()} мин.",
-                        f"Все {self.sent} отправлены! Вот это я понимаю. Свободен 💪")
+            self.finish(tr("all {0} applications sent in {1} min.", self.sent, self.elapsed()),
+                        tr("All {0} sent! That's what I'm talking about. You're free 💪", self.sent))
         else:
-            self.say("Claude", f"Есть! {self.sent} из {len(self.jobs)}.")
+            self.say("Claude", tr("Done! {0} of {1}.", self.sent, len(self.jobs)))
 
     def say(self, who: str, text: str):
         tag = {USER: "me", "Claude": "claude"}.get(who, "sys")
@@ -515,8 +519,8 @@ class Session:
         self.grace_until = time.time() + mins * 60
         self.end = self.grace_until + self.total * 60
         self.delay_row.pack_forget()
-        self.say("sys", f"Начало отложено на {mins} мин. — в {time.strftime('%H:%M', time.localtime(self.grace_until))}. "
-                        f"Окно свернётся и вернётся само.")
+        self.say("sys", tr("Start delayed by {0} min — until {1}. The window will minimise and come back by "
+                           "itself.", mins, time.strftime('%H:%M', time.localtime(self.grace_until))))
         log(f"{self.slot} delayed {mins}")
         self.root.attributes("-topmost", False)
         self.root.after(1500, self.root.iconify)
@@ -531,7 +535,7 @@ class Session:
         self.place_study()
         force_foreground(self.study)
         self.root.lift()
-        self.say("Claude", f"Время вышло — начинаем «{self.title}», {self.total} мин.")
+        self.say("Claude", tr("Time's up — starting «{0}», {1} min.", self.title, self.total))
 
     # ---------- browser
     def open_study(self):
@@ -594,22 +598,22 @@ class Session:
                 self.delay_row.pack_forget()  # no more delaying once the session has started
             if now < self.grace_until:
                 self.timer.config(text="-" + self.fmt(self.grace_until - now))
-                self.status.config(text="отложено, скоро начнём" if self.delayed else "скоро начнём")
+                self.status.config(text=tr("delayed, starting soon") if self.delayed else tr("starting soon"))
             elif now < self.snooze_until:
                 self.timer.config(text=self.fmt(self.snooze_until - now))
-                self.status.config(text="пауза, потом продолжим")
+                self.status.config(text=tr("paused, will continue"))
             elif now >= self.end:
-                self.finish("завершена полностью", f"Готово! {self.total} минут «{self.title}» позади. Горжусь 💪")
+                self.finish(tr("completed in full"), tr("Done! {0} minutes of «{1}» behind you. Proud of you 💪", self.total, self.title))
             else:
                 self.timer.config(text=self.fmt(self.end - now))
-                self.status.config(text=f"фокус · попыток сбежать: {self.escapes}")
+                self.status.config(text=tr("focus · escape attempts: {0}", self.escapes))
             if self.locked():
                 self.guard(now)
         self.root.after(1000, self.tick)
 
     def guard(self, now: float):
         if not self.study or not user32.IsWindow(self.study):
-            self.say("sys", "Окно учёбы закрылось — открываю снова.")
+            self.say("sys", tr("The study window closed — opening it again."))
             self.study = None
             self.open_study()
             return
@@ -628,10 +632,10 @@ class Session:
             force_foreground(self.study)
             self.root.lift()
             if self.escapes in (1, 5, 15) or self.escapes % 30 == 0:
-                self.say("sys", f"Вернул на учёбу (попытка №{self.escapes}). Нужно выйти — напиши причину.")
+                self.say("sys", tr("Back to studying (attempt #{0}). Need to leave? Write the reason.", self.escapes))
         elif now - self.last_offtab_note > 90 and not self.on_topic(_title(self.study)):
             self.last_offtab_note = now
-            self.say("sys", f"Похоже, открыта не та вкладка: «{_title(self.study)[:60]}». Вернись к «{self.title}».")
+            self.say("sys", tr("Looks like the wrong tab is open: «{0}». Go back to «{1}».", _title(self.study)[:60], self.title))
 
     @staticmethod
     def fmt(sec: float) -> str:
@@ -646,13 +650,14 @@ class Session:
         self.entry.delete(0, "end")
         self.say(USER, text)
         if text.lower().strip(" .!") == CONFIG["stop_phrase"].lower():
-            self.finish(f"остановлена стоп-фразой через {self.elapsed()} мин.", "Стоп-кран сработал, отпускаю.")
+            self.finish(tr("stopped with the stop phrase after {0} min.", self.elapsed()), tr("Emergency stop "
+                                                                                   "triggered, releasing you."))
             return
         if self.done:
             return
         self.busy = True
         self.btn.config(text="…", state="disabled")
-        self.say("sys", "Claude думает…")
+        self.say("sys", tr("Claude is thinking…"))
         left = max(0, int((self.end - time.time()) / 60))
         threading.Thread(target=self._ask, args=(left,), daemon=True).start()
 
@@ -661,8 +666,8 @@ class Session:
             ans = ask_claude(self.title, left, self.total, self.escapes, self.history)
         except Exception as e:
             log(f"claude error: {e}")
-            ans = {"reply": "Не могу сейчас достучаться до себя (ошибка запуска Claude). "
-                            f"Если правда надо выйти — стоп-фраза «{CONFIG['stop_phrase']}».",
+            ans = {"reply": tr("Can't reach myself right now (Claude failed to start). If you really need to "
+                               "leave, use the stop phrase «{0}».", CONFIG['stop_phrase']),
                    "action": "none", "minutes": 0}
         self.root.after(0, self._apply, ans)
 
@@ -673,7 +678,7 @@ class Session:
         act = ans.get("action")
         if act == "unlock":
             reason = next((t for w, t in reversed(self.history) if w == USER), "")
-            self.finish(f"отпущена Claude через {self.elapsed()} мин., причина: «{reason[:200]}»", None)
+            self.finish(tr("released by Claude after {0} min, reason: «{1}»", self.elapsed(), reason[:200]), None)
         elif act == "snooze" and ans.get("minutes"):
             mins = ans["minutes"]
             now = time.time()
@@ -681,7 +686,7 @@ class Session:
             # a pause doesn't eat study time; a second pause on top of the current one only adds the difference
             self.end += max(0.0, new_until - max(now, self.snooze_until))
             self.snooze_until = max(self.snooze_until, new_until)
-            self.say("sys", f"Пауза {mins} мин. Потом продолжим.")
+            self.say("sys", tr("Pause {0} min. Then we continue.", mins))
             log(f"{self.slot} snooze {mins}")
 
     def elapsed(self) -> int:
@@ -695,20 +700,19 @@ class Session:
         if message:
             self.say("Claude", message)
         self.timer.config(text="✓", fg="#4fd18b")
-        self.status.config(text="свободен")
+        self.status.config(text=tr("free"))
         self.close_btn.pack(pady=(0, 16))
         self.root.attributes("-topmost", False)
         self.root.protocol("WM_DELETE_WINDOW", self.root.destroy)
-        line = (f"Фокус-сессия «{self.title}» {time.strftime('%Y-%m-%d %H:%M')}: {outcome}; "
-                f"план {self.total} мин., попыток переключиться: {self.escapes}."
-                + (f" Откликов отправлено: {self.sent} из {len(self.jobs)}." if self.jobs else ""))
+        line = (tr("Focus session «{0}» {1}: {2}; planned {3} min, switch attempts: {4}.", self.title, time.strftime('%Y-%m-%d %H:%M'), outcome, self.total, self.escapes)
+                + (tr(" Applications sent: {0} of {1}.", self.sent, len(self.jobs)) if self.jobs else ""))
         log(line)
         remember(line)
 
     def run(self):
         self.root.mainloop()
         if not self.done:
-            log(f"{self.slot}: окно закрыто без завершения")
+            log(tr("{0}: window closed before finishing", self.slot))
 
 
 POSTPONE = ROOT / "postpone.json"
@@ -728,7 +732,7 @@ def wait_postponed(slot: str) -> None:
     t = time.localtime()
     target = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, h, mi, 0, 0, 0, -1))
     if target > time.time():
-        log(f"{slot}: перенесено на {hhmm}, жду")
+        log(tr("{0}: moved to {1}, waiting", slot, hhmm))
         time.sleep(target - time.time())
 
 
@@ -741,7 +745,7 @@ def postpone(slot: str, hhmm: str) -> None:
     data = {d: v for d, v in data.items() if d >= today}  # drop past dates
     data.setdefault(today, {})[slot] = hhmm
     POSTPONE.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"{slot}: сегодня в {hhmm}")
+    print(tr("{0}: today at {1}", slot, hhmm))
 
 
 def main():
@@ -749,7 +753,7 @@ def main():
         postpone(sys.argv[2], sys.argv[3])
         return
     if len(sys.argv) >= 3 and sys.argv[1] == "ask":
-        print(json.dumps(ask_claude("Тест", 30, 40, 2, [(USER, " ".join(sys.argv[2:]))]),
+        print(json.dumps(ask_claude("Test", 30, 40, 2, [(USER, " ".join(sys.argv[2:]))]),
                          ensure_ascii=False, indent=1))
         return
     if len(sys.argv) < 3 or sys.argv[1] != "run" or sys.argv[2] not in CONFIG["slots"]:
@@ -758,7 +762,7 @@ def main():
     minutes = int(sys.argv[sys.argv.index("--minutes") + 1]) if "--minutes" in sys.argv else None
     wait_postponed(sys.argv[2])
     if CONFIG["slots"][sys.argv[2]].get("jobhunter") and not ready_jobs(1):
-        log(f"{sys.argv[2]}: в очереди JobHunter нет готовых откликов — сессию пропускаю")
+        log(tr("{0}: no ready applications in the JobHunter queue — skipping the session", sys.argv[2]))
         return
     log(f"start {sys.argv[2]}")
     Session(sys.argv[2], minutes).run()
