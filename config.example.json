@@ -1,14 +1,14 @@
 {
   "user_name": "Ana",
-  "chat_style": "По-русски, на «ты», коротко.",
+  "chat_style": "En español, de tú, breve.",
   "salary_profile": "vive en Madrid, 1 año de experiencia en soporte IT, español nativo, inglés B1. Busca remoto o Madrid.",
   "browser": "C:\\Program Files\\Opera GX\\opera.exe",
-  "stop_phrase": "стоп-кран",
+  "stop_phrase": "freno de emergencia",
   "grace_seconds": 60,
   "chat_width": 460,
   "slots": {
     "math": {
-      "title": "Математика (Math Academy)",
+      "title": "Matemáticas (Math Academy)",
       "schedule": [
         {
           "days": [
@@ -64,7 +64,7 @@
       ]
     },
     "apply": {
-      "title": "Отклики (JobHunter)",
+      "title": "Candidaturas (JobHunter)",
       "jobhunter": true,
       "jobhunter_limit": 5,
       "schedule": [

@@ -1,16 +1,16 @@
 """
-FocusLock — «заморозка» на учёбу с Claude-привратником.
+FocusLock — a study lock with Claude as the gatekeeper.
 
-Открывает страницу учёбы в Opera GX, растягивает её на экран и, пока идёт таймер,
-возвращает её на передний план, если переключиться на что-то другое.
-Справа окно с таймером и чатом с Claude (через `claude -p`, по подписке):
-чтобы выйти раньше или отложить, нужно назвать причину — Claude решает.
-Стоп-фраза из config.json отпускает сразу и без Claude (аварийный выход).
+Opens the study page in Opera GX, maximises it and, while the timer runs,
+brings it back to the front whenever you switch to something else.
+On the right there is a timer and a chat with Claude (via `claude -p`, subscription):
+to leave early or postpone you have to give a reason — Claude decides.
+The stop phrase from config.json releases immediately, without Claude (emergency exit).
 
-  pythonw focus.py run math|vass|java     запустить слот из config.json
-  python  focus.py run math --minutes 1       короткий тест
-  python  focus.py ask "текст"               проверить ответ Claude без блокировки
-  python  focus.py postpone vass 20:30       перенести слот только на сегодня
+  pythonw focus.py run math|vass|java     run a slot from config.json
+  python  focus.py run math --minutes 1       quick test
+  python  focus.py ask "text"               test Claude's answer without locking
+  python  focus.py postpone vass 20:30       move a slot for today only
 """
 from __future__ import annotations
 
@@ -28,9 +28,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
-USER = CONFIG.get("user_name", "Пользователь")          # как подписан пользователь в чате и промптах
+USER = CONFIG.get("user_name", "Пользователь")          # how the user is labelled in the chat and in prompts
 STYLE = CONFIG.get("chat_style", "По-русски, на «ты», коротко.")
-SALARY_PROFILE = CONFIG.get("salary_profile", "")     # кто ищет работу: опыт, языки, город — для оценки зарплаты
+SALARY_PROFILE = CONFIG.get("salary_profile", "")     # who is job hunting: experience, languages, city — used for salary estimates
 LOG = ROOT / "focus.log"
 
 try:
@@ -98,7 +98,7 @@ def browser_windows() -> dict[int, str]:
 def force_foreground(hwnd) -> None:
     if user32.IsIconic(hwnd):
         user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-    user32.keybd_event(0x12, 0, 0, 0)  # Alt: снимает запрет Windows на SetForegroundWindow
+    user32.keybd_event(0x12, 0, 0, 0)  # Alt key press lifts Windows' SetForegroundWindow restriction
     user32.keybd_event(0x12, 0, 2, 0)
     user32.SetForegroundWindow(hwnd)
     user32.BringWindowToTop(hwnd)
@@ -148,13 +148,13 @@ def ask_claude(title: str, left: int, total: int, escapes: int, history: list[tu
     return ans
 
 
-# ---------------------------------------------------------------- JobHunter (слот «Отклики»)
-JOBS_DB = Path(CONFIG.get("jobhunter_db", r"D:\JobHunter\data\jobs.db"))  # база JobHunter, если он установлен
+# ---------------------------------------------------------------- JobHunter ("applications" slot)
+JOBS_DB = Path(CONFIG.get("jobhunter_db", r"D:\JobHunter\data\jobs.db"))  # JobHunter database, if installed
 JOBHUNTER_EMPTY_URL = "https://www.linkedin.com/jobs/"
 
 
 def ready_jobs(limit: int) -> list[dict]:
-    """Готовые отклики из очереди JobHunter: лучшие по оценке, только с рабочей ссылкой."""
+    """Prepared applications from the JobHunter queue: best scored, only with a working link."""
     import sqlite3
     try:
         con = sqlite3.connect(JOBS_DB)
@@ -183,7 +183,7 @@ def _get(url: str) -> str:
 
 
 def apply_kind(job: dict) -> tuple[str, str]:
-    """(вид, подпись): 'easy' — отклик прямо на площадке, 'ext' — уход на сайт компании, '?' — неясно."""
+    """(kind, label): 'easy' — apply on the job board itself, 'ext' — redirect to the company site, '?' — unknown."""
     src, url = job.get("source"), job.get("url") or ""
     try:
         if src == "linkedin":
@@ -211,7 +211,7 @@ def apply_kind(job: dict) -> tuple[str, str]:
 
 
 def classify_jobs(jobs: list[dict]) -> None:
-    """Проставляет job['_kind'], job['_how'] (с кэшем) — чтобы простые отклики шли первыми."""
+    """Sets job['_kind'] and job['_how'] (cached) so that quick applications come first."""
     try:
         cache = json.loads(APPLY_CACHE.read_text(encoding="utf-8"))
     except Exception:
@@ -239,7 +239,7 @@ SALARY_PROMPT = """Помоги пользователю ({user}) заполни
 
 
 def salary_estimates(jobs: list[dict]) -> dict:
-    """{job_id: {...}} — из кэша, недостающие одним запросом к Claude (claude -p, подписка)."""
+    """{job_id: {...}} — from cache; missing ones in a single Claude call (claude -p, subscription)."""
     try:
         cache = json.loads(SALARY_CACHE.read_text(encoding="utf-8"))
     except Exception:
@@ -284,9 +284,9 @@ def mark_applied(job_id: str) -> None:
 
 
 def remember(text: str) -> None:
-    """Итог сессии — в память Claude, чтобы он знал, как идёт учёба."""
+    """Session summary goes to Claude's memory so it knows how studying is going."""
     try:
-        sys.path.insert(0, CONFIG.get("claude_memory_dir", r"D:\ClaudeMemory"))  # необязательная память Claude
+        sys.path.insert(0, CONFIG.get("claude_memory_dir", r"D:\ClaudeMemory"))  # optional Claude long-term memory
         import memory_core as mem
         mem.save(text, kind="fact", project="focus", importance=2)
     except Exception as e:
@@ -308,12 +308,12 @@ class Session:
             limit = s.get("jobhunter_limit", 5)
             pool = ready_jobs(limit * 3)
             classify_jobs(pool)
-            order = {"easy": 0, "?": 1, "ext": 2}  # сначала то, что отправляется в пару кликов
+            order = {"easy": 0, "?": 1, "ext": 2}  # quick-apply jobs first
             pool.sort(key=lambda j: (order.get(j["_kind"], 1), -(j.get("score") or 0)))
             self.jobs = pool[:limit]
         self.urls = [j["url"] for j in self.jobs] or s.get("urls") or [s.get("url") or JOBHUNTER_EMPTY_URL]
         self.keywords = [k.lower() for k in s.get("keywords", [])]
-        self.apps = [a.lower() for a in s.get("allowed_apps", [])]  # программы, которые тоже учёба (IDE)
+        self.apps = [a.lower() for a in s.get("allowed_apps", [])]  # programs that also count as studying (IDE)
         self.blocked = [b.lower() for b in CONFIG.get("blocked_sites", [])]
         self.pre_windows: set = set()
         self.logged_titles: set = set()
@@ -368,7 +368,7 @@ class Session:
         self.entry.bind("<Return>", lambda e: self.send())
         self.btn = tk.Button(row, text="➤", command=self.send, bg=ACC, fg="white", relief="flat", font=f, width=3)
         self.btn.pack(side="left", padx=(8, 0))
-        # «Отложить начало» — один раз и только до старта, без объяснений
+        # "Delay start": once, only before the session starts, no reason needed
         self.delay_row = tk.Frame(self.root, bg=BG)
         self.delay_row.pack(fill="x", padx=14, pady=(0, 14), before=self.chat)
         tk.Label(self.delay_row, text="Отложить начало, мин:", bg=BG, fg=DIM, font=("Segoe UI", 10)).pack(side="left")
@@ -383,7 +383,7 @@ class Session:
                                    relief="flat", font=f)
 
     def _build_jobs(self):
-        """Список откликов: скопировать письмо, открыть папку с PDF, отметить отправку."""
+        """Applications list: copy the letter, open the PDF folder, mark as sent."""
         self.sent = 0
         box = tk.Frame(self.root, bg=BG)
         box.pack(fill="x", padx=14, pady=(0, 6), before=self.chat)
@@ -433,7 +433,7 @@ class Session:
             self.say("sys", f"Скопировал {j['_ask']} для {j['company']}.")
 
     def _build_profile(self, parent, small):
-        """Кнопка «🪪 Анкета»: раскрывает поля из profile.json, клик по полю — копирует значение."""
+        """"🪪 Profile" button: expands fields from profile.json; clicking a field copies its value."""
         try:
             fields = [(k, v) for k, v in json.loads((ROOT / "profile.json").read_text(encoding="utf-8"))["fields"] if v]
         except Exception as e:
@@ -475,7 +475,7 @@ class Session:
 
     def open_dir(self, j: dict):
         if j.get("app_dir") and Path(j["app_dir"]).exists():
-            os.startfile(j["app_dir"])  # Проводник в этом слоте разрешён (allowed_apps)
+            os.startfile(j["app_dir"])  # File Explorer is allowed in this slot (allowed_apps)
 
     def applied(self, j: dict, lbl, row):
         if j.get("_sent"):
@@ -537,7 +537,7 @@ class Session:
     def open_study(self):
         before = set(browser_windows())
         if not self.pre_windows:
-            self.pre_windows = before  # окна, открытые до сессии (там может быть что угодно)
+            self.pre_windows = before  # windows that were open before the session (could be anything)
         subprocess.Popen([CONFIG["browser"], "--new-window", *self.urls])
         for _ in range(40):
             time.sleep(0.25)
@@ -545,7 +545,7 @@ class Session:
             if new:
                 self.study = new[0]
                 break
-        if not self.study:  # Opera могла открыть вкладку в существующем окне
+        if not self.study:  # Opera may have opened the tab in an existing window
             wins = browser_windows()
             self.study = next((h for h, t in wins.items() if self.on_topic(t)), None) or next(iter(wins), None)
         self.place_study()
@@ -560,16 +560,16 @@ class Session:
         return not self.keywords or any(k in t for k in self.keywords)
 
     def is_helper(self, root) -> bool:
-        """Окно, которое тоже считается учёбой: разрешённая программа (IDE), окно Opera с сайтом из
-        keywords, или новое окно Opera, открытое во время сессии (всплывающий плеер курса и т.п.),
-        если в нём не открыт заблокированный сайт."""
+        """A window that also counts as studying: an allowed program (IDE), an Opera window with a site from
+        keywords, or a new Opera window opened during the session (course pop-up player etc.),
+        unless it shows a blocked site."""
         if not root:
             return False
         exe = _exe(root)
         if self.apps and exe in self.apps:
             return True
-        # Панель задач, рабочий стол, «Пуск», поиск: через них запускают IDE — это не побег.
-        # Окна Проводника с заголовком (папки) по-прежнему считаются.
+        # Taskbar, desktop, Start menu, search: used to launch the IDE — not an escape.
+        # File Explorer windows with a title (folders) still count.
         if exe in SHELL_EXES or (exe == "explorer.exe" and not _title(root)):
             return True
         wins = browser_windows()
@@ -591,7 +591,7 @@ class Session:
             if self.delayed and now >= self.grace_until:
                 self.resume_after_delay()
             if now >= self.grace_until and self.delay_row.winfo_ismapped():
-                self.delay_row.pack_forget()  # после старта откладывать уже нельзя
+                self.delay_row.pack_forget()  # no more delaying once the session has started
             if now < self.grace_until:
                 self.timer.config(text="-" + self.fmt(self.grace_until - now))
                 self.status.config(text="отложено, скоро начнём" if self.delayed else "скоро начнём")
@@ -617,11 +617,11 @@ class Session:
         me = int(self.root.wm_frame(), 16)
         root = user32.GetAncestor(fg, 2) if fg else None
         if root not in (self.study, me) and self.is_helper(root):
-            pass  # IDE, Mathway, плеер курса — тоже учёба
+            pass  # IDE, Mathway, course player — also studying
         elif fg not in (self.study, me) and root not in (self.study, me):
             self.escapes += 1
             t = f"{_exe(root) if root else '?'} | {_title(root)[:80] if root else ''}"
-            if t not in self.logged_titles:  # чтобы было видно, что именно считалось побегом
+            if t not in self.logged_titles:  # log exactly what was counted as an escape
                 self.logged_titles.add(t)
                 log(f"{self.slot} escape -> {t}")
             self.place_study()
@@ -678,7 +678,7 @@ class Session:
             mins = ans["minutes"]
             now = time.time()
             new_until = now + mins * 60
-            # время учёбы не съедается паузой; повторная пауза поверх текущей добавляет только разницу
+            # a pause doesn't eat study time; a second pause on top of the current one only adds the difference
             self.end += max(0.0, new_until - max(now, self.snooze_until))
             self.snooze_until = max(self.snooze_until, new_until)
             self.say("sys", f"Пауза {mins} мин. Потом продолжим.")
@@ -715,8 +715,8 @@ POSTPONE = ROOT / "postpone.json"
 
 
 def wait_postponed(slot: str) -> None:
-    """Разовый перенос на сегодня: postpone.json {"ГГГГ-ММ-ДД": {"slot": "ЧЧ:ММ"}}.
-    Задача Планировщика стартует в обычное время, а сессия ждёт до перенесённого."""
+    """One-off move for today: postpone.json {"YYYY-MM-DD": {"slot": "HH:MM"}}.
+    The scheduled task starts at the usual time and the session waits until the new time."""
     try:
         data = json.loads(POSTPONE.read_text(encoding="utf-8"))
     except Exception:
@@ -738,7 +738,7 @@ def postpone(slot: str, hhmm: str) -> None:
     except Exception:
         data = {}
     today = time.strftime("%Y-%m-%d")
-    data = {d: v for d, v in data.items() if d >= today}  # старые даты выкидываем
+    data = {d: v for d, v in data.items() if d >= today}  # drop past dates
     data.setdefault(today, {})[slot] = hhmm
     POSTPONE.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"{slot}: сегодня в {hhmm}")

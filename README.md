@@ -46,7 +46,8 @@ python focus.py run math --minutes 1      # prueba rápida
 ```
 
 Requisitos: Windows, Python 3.12+, [Claude Code](https://claude.com/claude-code) con sesión iniciada.
-La interfaz y los mensajes de Claude están en ruso (es mi idioma nativo); se cambian en el código y en `chat_style`.
+El código y los comentarios están en inglés. La interfaz está en ruso (mi idioma nativo);
+el idioma de las respuestas de Claude se elige en `chat_style`.
 
 ## Cómo lo hice
 

@@ -1,5 +1,5 @@
 {
-  "_": "Анкета для форм откликов. Клик по полю в FocusLock копирует значение. Пустые поля не показываются.",
+  "_": "Personal data for application forms. Clicking a field in FocusLock copies its value. Empty fields are hidden.",
   "fields": [
     [
       "Nombre",
