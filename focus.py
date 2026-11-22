@@ -323,7 +323,9 @@ class Session:
         self.urls = [j["url"] for j in self.jobs] or s.get("urls") or [s.get("url") or JOBHUNTER_EMPTY_URL]
         self.keywords = [k.lower() for k in s.get("keywords", [])]
         self.apps = [a.lower() for a in s.get("allowed_apps", [])]  # programs that also count as studying (IDE)
-        self.blocked = [b.lower() for b in CONFIG.get("blocked_sites", [])]
+        # whole words only: otherwise «vk» is found inside the course player's random sesskey=BAlVkiu6hN
+        blocked = CONFIG.get("blocked_sites", [])
+        self.blocked = re.compile(r"\b(?:" + "|".join(map(re.escape, blocked)) + r")\b", re.I) if blocked else None
         self.pre_windows: set = set()
         self.logged_titles: set = set()
         self.delayed = False
@@ -586,7 +588,7 @@ class Session:
         if root not in wins:
             return False
         title = wins[root].lower()
-        if any(b in title for b in self.blocked):
+        if self.blocked and self.blocked.search(title):
             return False
         return self.on_topic(title) or root not in self.pre_windows
 
