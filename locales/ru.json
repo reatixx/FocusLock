@@ -1,6 +1,7 @@
 {
  "  (click to copy)": "  (клик — скопировать)",
  " Applications sent: {0} of {1}.": " Откликов отправлено: {0} из {1}.",
+ "+{0} min. Session ends at {1}.": "+{0} мин. Сессия закончится в {1}.",
  "All {0} sent! That's what I'm talking about. You're free 💪": "Все {0} отправлены! Вот это я понимаю. Свободен 💪",
  "Back to studying (attempt #{0}). Need to leave? Write the reason.": "Вернул на учёбу (попытка №{0}). Нужно выйти — напиши причину.",
  "Can't reach myself right now (Claude failed to start). If you really need to leave, use the stop phrase «{0}».": "Не могу сейчас достучаться до себя (ошибка запуска Claude). Если правда надо выйти — стоп-фраза «{0}».",

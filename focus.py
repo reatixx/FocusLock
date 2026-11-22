@@ -123,23 +123,29 @@ def screen() -> tuple[int, int]:
 # ---------------------------------------------------------------- Claude
 PROMPT = ("You are Claude. You work as the gatekeeper in FocusLock on the user's computer ({user}): they "
           "asked to be \"frozen\" into studying themselves, because they keep putting it off. The current "
-          "session is \"{title}\", {left} min left out of {total}. Attempts to switch to another window: "
+          "session is \"{title}\", {state}. Attempts to switch to another window: "
           "{escapes}.\n\nRules that {user} chose: leaving early or postponing only for a reason.\n- \"I don't "
           "want to\", \"I'm bored\", \"later\" are not reasons. Be supportive, gently and with humour; suggest "
           "holding on or doing at least a small piece, but don't let them go.\n- A real reason (feeling "
           "unwell, someone arrived, a call, something urgent, food on the stove): release (unlock) or give a "
           "pause (snooze) if it's a short thing. Health and safety: always release, no questioning.\n- A game "
           "match is running or something needs to be finished quickly: snooze up to 30 minutes, then the "
-          "session continues.\n- They say they've already done everything: believe it if it sounds specific, "
+          "session continues.\n- They ask for more time (\"add 15 minutes\", \"one more exercise\"): "
+          "always agree and extend (extend, up to 60 minutes); this works during the session and after it "
+          "ended.\n- They say they've already done everything: believe it if it sounds specific, "
           "and release. Praise them.\n- If no reason is given, ask for it. No lecturing. "
           "{style}\n\nConversation in this session:\n{history}\n\nAnswer STRICTLY with a single JSON "
-          "object:\n{{\"reply\": \"your answer\", \"action\": \"none\" | \"unlock\" | \"snooze\", \"minutes\": number for "
-          "snooze or 0}}")
+          "object:\n{{\"reply\": \"your answer\", \"action\": \"none\" | \"unlock\" | \"snooze\" | \"extend\", \"minutes\": number for "
+          "snooze/extend or 0}}")
 
 
-def ask_claude(title: str, left: int, total: int, escapes: int, history: list[tuple[str, str]]) -> dict:
+def ask_claude(title: str, left: int, total: int, escapes: int, history: list[tuple[str, str]],
+               done: bool = False) -> dict:
     hist = "\n".join(f"{who}: {text}" for who, text in history[-16:])
-    prompt = PROMPT.format(user=USER, style=STYLE, title=title, left=left, total=total, escapes=escapes, history=hist)
+    # once the session is over there is nothing to release or pause — only extend
+    state = (f"already finished ({total} min done); unlock/snooze make no sense now, only extend" if done
+             else f"{left} min left out of {total}")
+    prompt = PROMPT.format(user=USER, style=STYLE, title=title, state=state, escapes=escapes, history=hist)
     exe = Path.home() / ".local" / "bin" / "claude.exe"
     r = subprocess.run([str(exe) if exe.exists() else "claude", "-p", "--output-format", "json", "--tools", "",
                         "--strict-mcp-config", "--no-session-persistence"],
@@ -152,7 +158,7 @@ def ask_claude(title: str, left: int, total: int, escapes: int, history: list[tu
     if not m:
         return {"reply": out.get("result", "").strip(), "action": "none", "minutes": 0}
     ans = json.loads(m.group(0))
-    ans["minutes"] = max(0, min(30, int(ans.get("minutes") or 0)))
+    ans["minutes"] = max(0, min(60 if ans.get("action") == "extend" else 30, int(ans.get("minutes") or 0)))
     return ans
 
 
@@ -653,8 +659,6 @@ class Session:
             self.finish(tr("stopped with the stop phrase after {0} min.", self.elapsed()), tr("Emergency stop "
                                                                                    "triggered, releasing you."))
             return
-        if self.done:
-            return
         self.busy = True
         self.btn.config(text="…", state="disabled")
         self.say("sys", tr("Claude is thinking…"))
@@ -663,7 +667,7 @@ class Session:
 
     def _ask(self, left: int):
         try:
-            ans = ask_claude(self.title, left, self.total, self.escapes, self.history)
+            ans = ask_claude(self.title, left, self.total, self.escapes, self.history, self.done)
         except Exception as e:
             log(f"claude error: {e}")
             ans = {"reply": tr("Can't reach myself right now (Claude failed to start). If you really need to "
@@ -676,7 +680,11 @@ class Session:
         self.btn.config(text="➤", state="normal")
         self.say("Claude", ans.get("reply", ""))
         act = ans.get("action")
-        if act == "unlock":
+        if act == "extend" and ans.get("minutes"):
+            self.extend(ans["minutes"])
+        elif self.done:
+            pass  # the session is already over: nothing to release or pause
+        elif act == "unlock":
             reason = next((t for w, t in reversed(self.history) if w == USER), "")
             self.finish(tr("released by Claude after {0} min, reason: «{1}»", self.elapsed(), reason[:200]), None)
         elif act == "snooze" and ans.get("minutes"):
@@ -688,6 +696,25 @@ class Session:
             self.snooze_until = max(self.snooze_until, new_until)
             self.say("sys", tr("Pause {0} min. Then we continue.", mins))
             log(f"{self.slot} snooze {mins}")
+
+    def extend(self, mins: int):
+        """Add minutes; if the session has already ended, restart it for these minutes."""
+        now = time.time()
+        self.total += mins
+        if self.done:
+            self.done = False
+            self.end = max(now, self.snooze_until) + mins * 60
+            self.close_btn.pack_forget()
+            self.root.attributes("-topmost", True)
+            self.root.protocol("WM_DELETE_WINDOW", lambda: None)
+            if not self.study or not user32.IsWindow(self.study):
+                self.study = None
+                self.open_study()
+            self.place_study()
+        else:
+            self.end += mins * 60
+        self.say("sys", tr("+{0} min. Session ends at {1}.", mins, time.strftime('%H:%M', time.localtime(self.end))))
+        log(f"{self.slot} extend {mins}")
 
     def elapsed(self) -> int:
         return max(0, int((time.time() - self.grace_until) / 60))
