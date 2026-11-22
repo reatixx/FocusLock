@@ -1,0 +1,99 @@
+{
+  "user_name": "Ana",
+  "chat_style": "По-русски, на «ты», коротко.",
+  "salary_profile": "vive en Madrid, 1 año de experiencia en soporte IT, español nativo, inglés B1. Busca remoto o Madrid.",
+  "browser": "C:\\Program Files\\Opera GX\\opera.exe",
+  "stop_phrase": "стоп-кран",
+  "grace_seconds": 60,
+  "chat_width": 460,
+  "slots": {
+    "math": {
+      "title": "Математика (Math Academy)",
+      "schedule": [
+        {
+          "days": [
+            "Monday",
+            "Tuesday",
+            "Wednesday"
+          ],
+          "time": "21:00"
+        },
+        {
+          "days": [
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday"
+          ],
+          "time": "17:30"
+        }
+      ],
+      "minutes": 60,
+      "keywords": [
+        "Math Academy",
+        "mathacademy",
+        "Mathway"
+      ],
+      "urls": [
+        "https://www.mathacademy.com/learn",
+        "https://www.mathway.com/"
+      ]
+    },
+    "java": {
+      "title": "Java (Hyperskill)",
+      "schedule": [
+        {
+          "days": [
+            "daily"
+          ],
+          "time": "22:30"
+        }
+      ],
+      "minutes": 30,
+      "keywords": [
+        "Hyperskill",
+        "JetBrains Academy",
+        "Java"
+      ],
+      "urls": [
+        "https://hyperskill.org/"
+      ],
+      "allowed_apps": [
+        "idea64.exe",
+        "idea.exe"
+      ]
+    },
+    "apply": {
+      "title": "Отклики (JobHunter)",
+      "jobhunter": true,
+      "jobhunter_limit": 5,
+      "schedule": [
+        {
+          "days": [
+            "Tuesday",
+            "Friday"
+          ],
+          "time": "19:00"
+        }
+      ],
+      "minutes": 30,
+      "keywords": [],
+      "allowed_apps": [
+        "explorer.exe"
+      ]
+    }
+  },
+  "blocked_sites": [
+    "YouTube",
+    "Twitch",
+    "Discord",
+    "Netflix",
+    "Reddit",
+    "VK",
+    "Steam",
+    "TikTok",
+    "Instagram",
+    "Kick",
+    "Twitter"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "_": "Анкета для форм откликов. Клик по полю в FocusLock копирует значение. Пустые поля не показываются.",
+  "fields": [
+    [
+      "Nombre",
+      "Ana"
+    ],
+    [
+      "Apellidos",
+      "García"
+    ],
+    [
+      "Email",
+      "ana@example.com"
+    ],
+    [
+      "Teléfono",
+      "+34 600 000 000"
+    ],
+    [
+      "Ciudad",
+      "Madrid"
+    ],
+    [
+      "LinkedIn",
+      "https://www.linkedin.com/in/..."
+    ],
+    [
+      "Disponibilidad",
+      "Inmediata"
+    ],
+    [
+      "Idiomas",
+      "Español: nativo · Inglés: B1"
+    ]
+  ]
+}

@@ -1,0 +1,7 @@
+# личное и рабочие файлы — не публикуются
+config.json
+profile.json
+postpone.json
+*_cache.json
+*.log
+__pycache__/
