@@ -19,6 +19,7 @@ import ctypes.wintypes as wt
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -302,6 +303,71 @@ def remember(text: str) -> None:
         log(f"memory error: {e}")
 
 
+# ---------------------------------------------------------------- one session at a time
+# Two slots can overlap (a 30-min pause pushes VASS past 21:00 when Math starts). Two FocusLock
+# windows would then fight each other: each one pulls its own study window to the front and treats
+# the other as an escape. So only one session may be active; the next one waits for it to finish.
+LOCK_PORT = 47612            # a bound port = a session is active (simple mutex, no dependencies)
+ACTIVE = ROOT / "active.json"
+MAX_WAIT_HOURS = 3
+
+
+class SessionLock:
+    def __init__(self):
+        self.sock: socket.socket | None = None
+
+    def acquire(self, slot: str, title: str) -> bool:
+        if self.sock:
+            return True
+        s = socket.socket()
+        try:
+            s.bind(("127.0.0.1", LOCK_PORT))
+        except OSError:
+            s.close()
+            return False
+        self.sock = s
+        ACTIVE.write_text(json.dumps({"slot": slot, "title": title, "pid": os.getpid()}, ensure_ascii=False),
+                          encoding="utf-8")
+        return True
+
+    def release(self) -> None:
+        if self.sock:
+            self.sock.close()
+            self.sock = None
+            try:
+                ACTIVE.unlink()
+            except OSError:
+                pass
+
+
+def active_session() -> dict:
+    try:
+        return json.loads(ACTIVE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def wait_turn(lock: SessionLock, slot: str) -> str | None:
+    """Blocks until no other session is active. Returns the title of the session we waited for
+    ("" if none), or None if we should not start (same slot already running, or waited too long)."""
+    title = CONFIG["slots"][slot]["title"]
+    waited_for = ""
+    deadline = time.time() + MAX_WAIT_HOURS * 3600
+    while not lock.acquire(slot, title):
+        other = active_session()
+        if other.get("slot") == slot:
+            log(f"{slot}: already running, skipping the duplicate")
+            return None
+        if not waited_for:
+            waited_for = other.get("title") or "?"
+            log(f"{slot}: waiting for «{waited_for}» to finish")
+        if time.time() > deadline:
+            log(f"{slot}: waited {MAX_WAIT_HOURS} h for «{waited_for}», giving up")
+            return None
+        time.sleep(15)
+    return waited_for
+
+
 # ---------------------------------------------------------------- session UI
 SHELL_EXES = {"startmenuexperiencehost.exe", "searchhost.exe", "searchapp.exe", "shellexperiencehost.exe",
               "shellhost.exe"}
@@ -309,8 +375,10 @@ BG, FG, ACC, DIM ="#16161d", "#e8e8ef", "#ff4f8b", "#8a8a99"
 
 
 class Session:
-    def __init__(self, slot: str, minutes: int | None = None):
+    def __init__(self, slot: str, minutes: int | None = None, lock: SessionLock | None = None,
+                 waited_for: str = ""):
         s = CONFIG["slots"][slot]
+        self.lock = lock or SessionLock()
         self.slot, self.title = slot, s["title"]
         self.jobs = []
         if s.get("jobhunter"):
@@ -353,6 +421,8 @@ class Session:
         self.W, self.H, self.cw = W, H, cw
         self._build()
         self.open_study()
+        if waited_for:
+            self.say("sys", tr("«{0}» has finished — now it's this session's turn.", waited_for))
         self.say("Claude", tr("Starting «{1}» for {2} min in {0} s. Save your game, make some tea. Need more "
                               "time? Use the «Delay start» slider (once, before the start). To leave early, "
                               "write the reason here.", int(self.grace_until - time.time()), self.title, self.total))
@@ -702,6 +772,10 @@ class Session:
     def extend(self, mins: int):
         """Add minutes; if the session has already ended, restart it for these minutes."""
         now = time.time()
+        if self.done and not self.lock.acquire(self.slot, self.title):
+            other = active_session().get("title") or "?"
+            self.say("sys", tr("Can't extend: «{0}» has already started. Finish it first.", other))
+            return
         self.total += mins
         if self.done:
             self.done = False
@@ -725,6 +799,7 @@ class Session:
         if self.done:
             return
         self.done = True
+        self.lock.release()          # the next scheduled session may start now
         self.outcome = outcome
         if message:
             self.say("Claude", message)
@@ -740,6 +815,7 @@ class Session:
 
     def run(self):
         self.root.mainloop()
+        self.lock.release()
         if not self.done:
             log(tr("{0}: window closed before finishing", self.slot))
 
@@ -793,8 +869,12 @@ def main():
     if CONFIG["slots"][sys.argv[2]].get("jobhunter") and not ready_jobs(1):
         log(tr("{0}: no ready applications in the JobHunter queue — skipping the session", sys.argv[2]))
         return
+    lock = SessionLock()
+    waited_for = wait_turn(lock, sys.argv[2])
+    if waited_for is None:
+        return
     log(f"start {sys.argv[2]}")
-    Session(sys.argv[2], minutes).run()
+    Session(sys.argv[2], minutes, lock, waited_for).run()
 
 
 if __name__ == "__main__":

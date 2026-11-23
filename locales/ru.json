@@ -52,5 +52,7 @@
  "💶 {0} € gross/year": "💶 {0} € брутто/год",
  "📋 Letter": "📋 Письмо",
  "🪪 Profile ▸": "🪪 Анкета ▸",
- "🪪 Profile ▾ (click a field to copy)": "🪪 Анкета ▾ (клик по полю — копировать)"
+ "🪪 Profile ▾ (click a field to copy)": "🪪 Анкета ▾ (клик по полю — копировать)",
+ "«{0}» has finished — now it's this session's turn.": "«{0}» закончилась — теперь очередь этой сессии.",
+ "Can't extend: «{0}» has already started. Finish it first.": "Продлить не получится: уже началась «{0}». Сначала закончи её."
 }

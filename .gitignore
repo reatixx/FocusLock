@@ -5,3 +5,4 @@ postpone.json
 *_cache.json
 *.log
 __pycache__/
+active.json
